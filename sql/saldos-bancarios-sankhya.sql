@@ -15,7 +15,11 @@
      2) O saldo inicial da conta normalmente ja esta lancado na propria TGFMBC
         (TOP de saldo inicial). Rode a query [4] para conferir; se na sua base
         o saldo inicial estiver so no cadastro da conta, veja o bloco [5].
-     3) As colunas do cadastro TSICTA variam entre versoes/bases do Sankhya.
+     3) NAO use variaveis de substituicao (&NOME) nem bind (:NOME) nas
+        queries abaixo: em varias ferramentas isso gera ORA-01008 ("nem
+        todas as variaveis sao limitadas"). Onde aparece 999, edite o
+        numero direto no texto da query antes de executar.
+     4) As colunas do cadastro TSICTA variam entre versoes/bases do Sankhya.
         A query [1] usa APENAS CODCTABCOINT e DESCRICAO, que existem sempre.
         Rode a query [0] para descobrir os nomes reais de banco/agencia/
         empresa na sua base e enriqueca a [1] conforme o bloco [1b].
@@ -129,19 +133,18 @@ SELECT
 
 /* ----------------------------------------------------------------------------
    [4] CONFERENCIA - primeiros lancamentos da conta (o saldo inicial esta aqui?)
-       Troque &COD_CONTA pelo CODCTABCOINT que quer auditar.
+       Troque o 999 pelo CODCTABCOINT que quer auditar (sem & - veja nota no topo).
    -------------------------------------------------------------------------- */
 SELECT NUBCO, DTLANC, VLRLANC, RECDESP, VLRLANC * RECDESP AS VLR_COM_SINAL,
        CODTIPOPER, NUMDOC, CONCILIADO, HISTORICO, ORIGMOV
   FROM TGFMBC
- WHERE CODCTABCOINT = &COD_CONTA
- ORDER BY DTLANC, NUBCO
- FETCH FIRST 50 ROWS ONLY;
+ WHERE CODCTABCOINT = 999   /* <<< TROQUE 999 pelo codigo da conta */
+ ORDER BY DTLANC, NUBCO;
 
 /* Detalhe de um mes especifico (conferir o movimento da query [1]) */
 SELECT NUBCO, DTLANC, VLRLANC, RECDESP, HISTORICO, NUMDOC, CONCILIADO
   FROM TGFMBC
- WHERE CODCTABCOINT = &COD_CONTA
+ WHERE CODCTABCOINT = 999   /* <<< TROQUE 999 pelo codigo da conta */
    AND DTLANC >= TO_DATE('01/06/2026','DD/MM/YYYY')
    AND DTLANC <  TO_DATE('01/07/2026','DD/MM/YYYY')
  ORDER BY DTLANC, NUBCO;
@@ -167,7 +170,7 @@ SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE
 
 /* ============================================================================
    [6] DIAGNOSTICO - conta com saldo NEGATIVO indevido (tipico em APLICACAO)
-       Rode na ordem. Troque &COD_CONTA pelo CODCTABCOINT da aplicacao.
+       Rode na ordem. Troque o 999 pelo CODCTABCOINT da aplicacao.
    ============================================================================ */
 
 /* [6.1] Entradas x saidas da conta: a conta so tem saida?
@@ -181,7 +184,7 @@ SELECT CODCTABCOINT,
        SUM(CASE WHEN RECDESP = -1 THEN VLRLANC ELSE 0 END)         AS TOT_SAIDAS,
        SUM(VLRLANC * RECDESP)                                      AS SALDO_ATUAL
   FROM TGFMBC
- WHERE CODCTABCOINT = &COD_CONTA
+ WHERE CODCTABCOINT = 999   /* <<< TROQUE 999 pelo codigo da conta */
  GROUP BY CODCTABCOINT;
 
 /* [6.2] Mesma coisa para TODAS as contas de uma vez - mostra quais so tem saida */
@@ -208,7 +211,7 @@ SELECT MBC.CODTIPOPER,
   LEFT JOIN TGFTOP TOP
          ON TOP.CODTIPOPER = MBC.CODTIPOPER
         AND TOP.DHALTER    = MBC.DHTIPOPER
- WHERE MBC.CODCTABCOINT = &COD_CONTA
+ WHERE MBC.CODCTABCOINT = 999   /* <<< TROQUE 999 pelo codigo da conta */
  GROUP BY MBC.CODTIPOPER, TOP.DESCROPER, MBC.RECDESP
  ORDER BY MBC.CODTIPOPER, MBC.RECDESP;
 
@@ -231,7 +234,7 @@ SELECT NVL(TO_CHAR(RECDESP),'(NULO)') AS RECDESP, COUNT(*) AS QTD
 SELECT NUBCO, DTLANC, VLRLANC, RECDESP, VLRLANC * RECDESP AS VLR_COM_SINAL,
        CODTIPOPER, NUMDOC, CONCILIADO, ORIGMOV, HISTORICO
   FROM TGFMBC
- WHERE CODCTABCOINT = &COD_CONTA
+ WHERE CODCTABCOINT = 999   /* <<< TROQUE 999 pelo codigo da conta */
  ORDER BY DTLANC, NUBCO;
 
 /* [6.7] FORMULA ALTERNATIVA - use SOMENTE se a [6.4] apontou VLRLANC negativo.
