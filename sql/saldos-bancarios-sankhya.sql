@@ -243,3 +243,73 @@ SELECT NUBCO, DTLANC, VLRLANC, RECDESP, VLRLANC * RECDESP AS VLR_COM_SINAL,
         Se o valor ja carrega o sinal correto sozinho, o certo e:
             SUM(MBC.VLRLANC)
         Nunca as duas coisas ao mesmo tempo. */
+
+
+/* ============================================================================
+   [7] SALDO FINAL = SALDO INICIAL DO CADASTRO + MOVIMENTOS DA TGFMBC
+       Use quando a abertura da conta NAO esta lancada na TGFMBC.
+
+       ATENCAO: confirme antes o nome das colunas com a query [5]. Este bloco
+       assume SALDOINI (valor) e DTSALDOINI (data da posicao). Se na sua base
+       tiverem outro nome, troque nas ocorrencias abaixo.
+   ============================================================================ */
+
+/* [7.1] PRINCIPAL - saldos em 30/04, 31/05 e 30/06 de 2026, com abertura
+        A regra do JOIN e o ponto delicado: so entram na soma os lancamentos
+        POSTERIORES a data do saldo inicial, senao o que ja esta dentro da
+        abertura seria contado duas vezes.
+        Aqui assumimos que SALDOINI e a posicao no FECHAMENTO de DTSALDOINI
+        (por isso o "+ 1"). Confira com a query [7.3] e, se o seu Sankhya
+        tratar como posicao na ABERTURA do dia, troque "+ 1" por "+ 0".      */
+SELECT
+       CTA.CODCTABCOINT                                       AS COD_CONTA,
+       CTA.DESCRICAO                                          AS CONTA,
+       NVL(CTA.SALDOINI, 0)                                   AS SALDO_INICIAL,
+       CTA.DTSALDOINI                                         AS DT_SALDO_INICIAL,
+
+       NVL(CTA.SALDOINI, 0) +
+       NVL(SUM(CASE WHEN MBC.DTLANC < TO_DATE('01/05/2026','DD/MM/YYYY')
+                    THEN MBC.VLRLANC * MBC.RECDESP END), 0)   AS SALDO_30_04_2026,
+
+       NVL(CTA.SALDOINI, 0) +
+       NVL(SUM(CASE WHEN MBC.DTLANC < TO_DATE('01/06/2026','DD/MM/YYYY')
+                    THEN MBC.VLRLANC * MBC.RECDESP END), 0)   AS SALDO_31_05_2026,
+
+       NVL(CTA.SALDOINI, 0) +
+       NVL(SUM(CASE WHEN MBC.DTLANC < TO_DATE('01/07/2026','DD/MM/YYYY')
+                    THEN MBC.VLRLANC * MBC.RECDESP END), 0)   AS SALDO_30_06_2026
+  FROM TSICTA CTA
+  LEFT JOIN TGFMBC MBC
+         ON MBC.CODCTABCOINT = CTA.CODCTABCOINT
+        AND MBC.DTLANC      >= NVL(CTA.DTSALDOINI, TO_DATE('01/01/1900','DD/MM/YYYY')) + 1
+        AND MBC.DTLANC       < TO_DATE('01/07/2026','DD/MM/YYYY')
+ GROUP BY CTA.CODCTABCOINT, CTA.DESCRICAO, CTA.SALDOINI, CTA.DTSALDOINI
+ ORDER BY CTA.DESCRICAO;
+
+/* [7.2] Contas SEM saldo inicial preenchido no cadastro.
+        Se uma aplicacao aparecer aqui E nao tiver abertura na TGFMBC,
+        nao existe de onde tirar o saldo - o cadastro precisa ser corrigido. */
+SELECT CODCTABCOINT, DESCRICAO, SALDOINI, DTSALDOINI
+  FROM TSICTA
+ WHERE NVL(SALDOINI, 0) = 0
+    OR DTSALDOINI IS NULL
+ ORDER BY DESCRICAO;
+
+/* [7.3] TESTE DA REGRA DO "+ 1" - existe lancamento na propria data do saldo
+        inicial? Se NAO retornar nada, "+ 1" e "+ 0" dao o mesmo resultado e
+        voce nao precisa decidir. Se retornar, compare o saldo das duas
+        versoes com o extrato da conta na tela do Sankhya. */
+SELECT CTA.CODCTABCOINT, CTA.DESCRICAO, CTA.DTSALDOINI,
+       COUNT(*)                             AS LANC_NA_DATA_DA_ABERTURA,
+       SUM(MBC.VLRLANC * MBC.RECDESP)       AS VALOR_EM_DISPUTA
+  FROM TSICTA CTA
+  JOIN TGFMBC MBC
+    ON MBC.CODCTABCOINT = CTA.CODCTABCOINT
+   AND TRUNC(MBC.DTLANC) = TRUNC(CTA.DTSALDOINI)
+ GROUP BY CTA.CODCTABCOINT, CTA.DESCRICAO, CTA.DTSALDOINI
+ ORDER BY CTA.DESCRICAO;
+
+/* [7.4] CONFERENCIA FINAL - rode a [7.1] e compare o SALDO_30_06_2026 de
+        duas ou tres contas com o saldo que a tela de Movimentacao Bancaria
+        (ou o Extrato de Conta) do Sankhya mostra em 30/06/2026.
+        Batendo nas contas correntes E nas aplicacoes, a query esta pronta. */
