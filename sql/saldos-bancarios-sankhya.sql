@@ -15,23 +15,33 @@
      2) O saldo inicial da conta normalmente ja esta lancado na propria TGFMBC
         (TOP de saldo inicial). Rode a query [4] para conferir; se na sua base
         o saldo inicial estiver so no cadastro da conta, veja o bloco [5].
-     3) Filtre CODEMP se quiser apenas uma empresa (linha comentada abaixo).
+     3) As colunas do cadastro TSICTA variam entre versoes/bases do Sankhya.
+        A query [1] usa APENAS CODCTABCOINT e DESCRICAO, que existem sempre.
+        Rode a query [0] para descobrir os nomes reais de banco/agencia/
+        empresa na sua base e enriqueca a [1] conforme o bloco [1b].
    ============================================================================ */
 
 
 /* ----------------------------------------------------------------------------
+   [0] DESCOBERTA - quais colunas existem no cadastro de contas desta base
+       Rode primeiro. E daqui que saem os nomes de banco/agencia/conta/empresa.
+   -------------------------------------------------------------------------- */
+SELECT COLUMN_NAME, DATA_TYPE, DATA_LENGTH
+  FROM ALL_TAB_COLUMNS
+ WHERE TABLE_NAME = 'TSICTA'
+ ORDER BY COLUMN_ID;
+
+/* Alternativa rapida: olhar uma linha inteira do cadastro */
+-- SELECT * FROM TSICTA WHERE ROWNUM = 1;
+
+
+/* ----------------------------------------------------------------------------
    [1] PRINCIPAL - uma linha por conta, uma coluna por data de corte
+       Versao minima: so usa colunas que existem em qualquer base Sankhya.
    -------------------------------------------------------------------------- */
 SELECT
        CTA.CODCTABCOINT                                       AS COD_CONTA,
        CTA.DESCRICAO                                          AS CONTA,
-       BCO.CODBCO                                             AS COD_BANCO,
-       BCO.NOMEBCO                                            AS BANCO,
-       CTA.NUMAGENCIA                                         AS AGENCIA,
-       CTA.NUMCONTA                                           AS NUM_CONTA,
-       CTA.CODEMP                                             AS COD_EMPRESA,
-       CTA.TIPO                                               AS TIPO_CONTA,
-       CTA.ATIVA                                              AS ATIVA,
 
        NVL(SUM(CASE WHEN MBC.DTLANC < TO_DATE('01/05/2026','DD/MM/YYYY')
                     THEN MBC.VLRLANC * MBC.RECDESP END), 0)   AS SALDO_30_04_2026,
@@ -42,7 +52,8 @@ SELECT
        NVL(SUM(CASE WHEN MBC.DTLANC < TO_DATE('01/07/2026','DD/MM/YYYY')
                     THEN MBC.VLRLANC * MBC.RECDESP END), 0)   AS SALDO_30_06_2026,
 
-       /* movimento liquido de cada mes, util para conferencia */
+       /* movimento liquido de cada mes, util para conferencia:
+          saldo anterior + movimento = saldo novo */
        NVL(SUM(CASE WHEN MBC.DTLANC >= TO_DATE('01/05/2026','DD/MM/YYYY')
                      AND MBC.DTLANC <  TO_DATE('01/06/2026','DD/MM/YYYY')
                     THEN MBC.VLRLANC * MBC.RECDESP END), 0)   AS MOVIMENTO_MAI_2026,
@@ -51,18 +62,26 @@ SELECT
                      AND MBC.DTLANC <  TO_DATE('01/07/2026','DD/MM/YYYY')
                     THEN MBC.VLRLANC * MBC.RECDESP END), 0)   AS MOVIMENTO_JUN_2026
   FROM TSICTA CTA
-  LEFT JOIN TSIBCO BCO
-         ON BCO.CODBCO = CTA.CODBCO
   LEFT JOIN TGFMBC MBC
          ON MBC.CODCTABCOINT = CTA.CODCTABCOINT
         AND MBC.DTLANC       < TO_DATE('01/07/2026','DD/MM/YYYY')   /* limite da maior data */
- WHERE 1 = 1
-   /* AND CTA.ATIVA  = 'S' */          -- descomente para so contas ativas
-   /* AND CTA.CODEMP = 1    */          -- descomente para filtrar empresa
-   /* AND CTA.TIPO   = 'C'  */          -- 'C' conta corrente / 'X' caixa / 'A' aplicacao
- GROUP BY CTA.CODCTABCOINT, CTA.DESCRICAO, BCO.CODBCO, BCO.NOMEBCO,
-          CTA.NUMAGENCIA, CTA.NUMCONTA, CTA.CODEMP, CTA.TIPO, CTA.ATIVA
- ORDER BY BCO.NOMEBCO, CTA.DESCRICAO;
+ GROUP BY CTA.CODCTABCOINT, CTA.DESCRICAO
+ ORDER BY CTA.DESCRICAO;
+
+
+/* ----------------------------------------------------------------------------
+   [1b] ENRIQUECIMENTO OPCIONAL - so depois de confirmar os nomes na query [0]
+        Exemplos de colunas que costumam existir (confirme antes de usar!):
+          CODEMP, CODBCO, NUMAGENCIA / AGENCIA, NUMCONTA / CONTA,
+          ATIVA / ATIVO, TIPO / TIPOCTA
+        Para trazer o nome do banco, junte com TSIBCO:
+          LEFT JOIN TSIBCO BCO ON BCO.CODBCO = CTA.CODBCO
+        Lembre de incluir cada coluna nova TAMBEM no GROUP BY.
+
+        Filtros que provavelmente vai querer (descomente na [1]):
+          WHERE CTA.ATIVA  = 'S'    -- so contas ativas
+          WHERE CTA.CODEMP = 1      -- uma empresa especifica
+   -------------------------------------------------------------------------- */
 
 
 /* ----------------------------------------------------------------------------
@@ -79,39 +98,33 @@ SELECT
        D.DT_SALDO,
        CTA.CODCTABCOINT                          AS COD_CONTA,
        CTA.DESCRICAO                             AS CONTA,
-       BCO.NOMEBCO                               AS BANCO,
        NVL((SELECT SUM(M.VLRLANC * M.RECDESP)
               FROM TGFMBC M
              WHERE M.CODCTABCOINT = CTA.CODCTABCOINT
                AND M.DTLANC       < D.DT_SALDO + 1), 0) AS SALDO
   FROM TSICTA CTA
  CROSS JOIN DATAS D
-  LEFT JOIN TSIBCO BCO ON BCO.CODBCO = CTA.CODBCO
- WHERE 1 = 1
-   /* AND CTA.ATIVA = 'S' */
- ORDER BY D.DT_SALDO, BCO.NOMEBCO, CTA.DESCRICAO;
+ ORDER BY D.DT_SALDO, CTA.DESCRICAO;
 
 
 /* ----------------------------------------------------------------------------
-   [3] SALDO CONCILIADO (extrato batido) x SALDO GERENCIAL
+   [3] SALDO CONCILIADO (extrato batido) x SALDO GERENCIAL em 30/06/2026
        Use quando precisar comparar com o extrato do banco.
    -------------------------------------------------------------------------- */
 SELECT
        CTA.CODCTABCOINT                                     AS COD_CONTA,
        CTA.DESCRICAO                                        AS CONTA,
-       BCO.NOMEBCO                                          AS BANCO,
        NVL(SUM(MBC.VLRLANC * MBC.RECDESP), 0)               AS SALDO_GERENCIAL_30_06,
        NVL(SUM(CASE WHEN MBC.CONCILIADO = 'S'
                     THEN MBC.VLRLANC * MBC.RECDESP END), 0) AS SALDO_CONCILIADO_30_06,
        NVL(SUM(CASE WHEN NVL(MBC.CONCILIADO,'N') <> 'S'
                     THEN MBC.VLRLANC * MBC.RECDESP END), 0) AS PENDENTE_CONCILIACAO
   FROM TSICTA CTA
-  LEFT JOIN TSIBCO BCO ON BCO.CODBCO = CTA.CODBCO
   LEFT JOIN TGFMBC MBC
          ON MBC.CODCTABCOINT = CTA.CODCTABCOINT
         AND MBC.DTLANC       < TO_DATE('01/07/2026','DD/MM/YYYY')
- GROUP BY CTA.CODCTABCOINT, CTA.DESCRICAO, BCO.NOMEBCO
- ORDER BY BCO.NOMEBCO, CTA.DESCRICAO;
+ GROUP BY CTA.CODCTABCOINT, CTA.DESCRICAO
+ ORDER BY CTA.DESCRICAO;
 
 
 /* ----------------------------------------------------------------------------
@@ -136,7 +149,7 @@ SELECT NUBCO, DTLANC, VLRLANC, RECDESP, HISTORICO, NUMDOC, CONCILIADO
 
 /* ----------------------------------------------------------------------------
    [5] SE a sua base guardar saldo inicial NO CADASTRO da conta (e nao na TGFMBC)
-       Primeiro descubra o nome real das colunas:
+       Primeiro descubra o nome real da coluna:
    -------------------------------------------------------------------------- */
 SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE
   FROM ALL_TAB_COLUMNS
