@@ -312,13 +312,92 @@ SELECT CODCTABCOINT, DESCRICAO, SALDOINI
                                       TO_DATE('01/01/1900','DD/MM/YYYY')) + 1
                 AND MBC.DTLANC <  TO_DATE('01/07/2026','DD/MM/YYYY')
 
-        (o "+ 1" assume saldo inicial = posicao no FECHAMENTO daquela data;
-         se for posicao na ABERTURA do dia, use "+ 0". Sem lancamento na
-         propria data da abertura, os dois dao o mesmo resultado.)
-        Lembre de incluir a coluna de data no GROUP BY.                       */
+
+/* ============================================================================
+   [8] TSICTA NAO TEM SALDOINI - TEM SALDOBCO E SALDOREAL (sem coluna de data)
+       Antes de somar qualquer uma das duas ao acumulado da TGFMBC, e preciso
+       descobrir o que elas realmente representam:
+         (a) um saldo de ABERTURA fixo, gravado uma vez quando a conta foi
+             implantada, ou
+         (b) um saldo ATUAL, que o Sankhya recalcula sozinho toda vez que
+             entra um lancamento na TGFMBC (cache do saldo de HOJE).
+       Se for (b), somar SALDOREAL de hoje aos movimentos ate 30/04 nao faz
+       sentido - estaria somando o saldo de agosto/2026 com o acumulado ate
+       abril. O teste abaixo decide isso pelos proprios dados.
+   ============================================================================ */
+
+/* [8.1] TESTE - SALDOBCO/SALDOREAL de hoje batem com a soma de TODOS os
+        lancamentos da TGFMBC (sem filtro de data)?
+          - Se DIFERENCA = 0 em quase todas as contas: (b) e verdade, os
+            campos sao so um cache do saldo atual - NAO USE para reconstruir
+            saldo passado, va para o bloco [9].
+          - Se DIFERENCA for um valor fixo e diferente de zero, especialmente
+            nas contas de aplicacao que ficaram negativas: (a) e verdade, e
+            essa DIFERENCA e exatamente o saldo de abertura que nunca foi
+            lancado na TGFMBC - use o bloco [8.2].                            */
+SELECT CTA.CODCTABCOINT                                  AS COD_CONTA,
+       CTA.DESCRICAO                                     AS CONTA,
+       CTA.SALDOBCO,
+       CTA.SALDOREAL,
+       NVL(MOV.SALDO_MOVIMENTOS, 0)                      AS SALDO_MOVIMENTOS_TGFMBC,
+       CTA.SALDOREAL - NVL(MOV.SALDO_MOVIMENTOS, 0)      AS DIFERENCA_SALDOREAL,
+       CTA.SALDOBCO  - NVL(MOV.SALDO_MOVIMENTOS, 0)      AS DIFERENCA_SALDOBCO
+  FROM TSICTA CTA
+  LEFT JOIN (SELECT CODCTABCOINT, SUM(VLRLANC * RECDESP) AS SALDO_MOVIMENTOS
+               FROM TGFMBC
+              GROUP BY CODCTABCOINT) MOV
+         ON MOV.CODCTABCOINT = CTA.CODCTABCOINT
+ ORDER BY CTA.DESCRICAO;
 
 
-/* [7.4] CONFERENCIA FINAL - rode a [7.1] e compare o SALDO_30_06_2026 de
-        duas ou tres contas com o saldo que a tela de Movimentacao Bancaria
-        (ou o Extrato de Conta) do Sankhya mostra em 30/06/2026.
-        Batendo nas contas correntes E nas aplicacoes, a query esta pronta. */
+/* [8.2] SE o teste [8.1] confirmou a hipotese (a) - diferenca fixa e
+        diferente de zero -, use essa diferenca como "saldo de abertura
+        implicito" e some ao acumulado ate cada data de corte.
+        Troque SALDOREAL por SALDOBCO se foi essa a coluna que bateu no teste. */
+SELECT
+       CTA.CODCTABCOINT                                       AS COD_CONTA,
+       CTA.DESCRICAO                                          AS CONTA,
+       ABERTURA.SALDO_ABERTURA_IMPLICITO,
+
+       ABERTURA.SALDO_ABERTURA_IMPLICITO +
+       NVL(SUM(CASE WHEN MBC.DTLANC < TO_DATE('01/05/2026','DD/MM/YYYY')
+                    THEN MBC.VLRLANC * MBC.RECDESP END), 0)   AS SALDO_30_04_2026,
+
+       ABERTURA.SALDO_ABERTURA_IMPLICITO +
+       NVL(SUM(CASE WHEN MBC.DTLANC < TO_DATE('01/06/2026','DD/MM/YYYY')
+                    THEN MBC.VLRLANC * MBC.RECDESP END), 0)   AS SALDO_31_05_2026,
+
+       ABERTURA.SALDO_ABERTURA_IMPLICITO +
+       NVL(SUM(CASE WHEN MBC.DTLANC < TO_DATE('01/07/2026','DD/MM/YYYY')
+                    THEN MBC.VLRLANC * MBC.RECDESP END), 0)   AS SALDO_30_06_2026
+  FROM TSICTA CTA
+  JOIN (SELECT CTA2.CODCTABCOINT,
+               CTA2.SALDOREAL - NVL(SUM(MBC2.VLRLANC * MBC2.RECDESP), 0)
+                  AS SALDO_ABERTURA_IMPLICITO
+          FROM TSICTA CTA2
+          LEFT JOIN TGFMBC MBC2 ON MBC2.CODCTABCOINT = CTA2.CODCTABCOINT
+         GROUP BY CTA2.CODCTABCOINT, CTA2.SALDOREAL) ABERTURA
+    ON ABERTURA.CODCTABCOINT = CTA.CODCTABCOINT
+  LEFT JOIN TGFMBC MBC
+         ON MBC.CODCTABCOINT = CTA.CODCTABCOINT
+        AND MBC.DTLANC       < TO_DATE('01/07/2026','DD/MM/YYYY')
+ GROUP BY CTA.CODCTABCOINT, CTA.DESCRICAO, ABERTURA.SALDO_ABERTURA_IMPLICITO
+ ORDER BY CTA.DESCRICAO;
+
+/* Cuidado: isso assume que a diferenca de hoje e a MESMA desde a implantacao,
+   ou seja, que ninguem ajustou SALDOBCO/SALDOREAL manualmente depois. Se a
+   [8.1] mostrar diferencas diferentes entre contas do mesmo tipo, ou valores
+   que nao parecem um saldo de abertura "redondo", desconfie e va conferir
+   direto na tela de cadastro da conta no Sankhya. */
+
+
+/* ============================================================================
+   [9] SE O TESTE [8.1] MOSTROU DIFERENCA = 0 (SALDOBCO/SALDOREAL sao so
+       cache do saldo atual, nao tem valor de abertura escondido)
+       Nesse caso o problema NAO e falta de saldo inicial. Volte ao bloco [6]
+       e investigue: contrapartida de transferencia faltando, RECDESP
+       invertido ou VLRLANC com sinal. A causa mais provavel para aplicacao
+       ficar negativa sem ter saldo inicial escondido e a [6.2]: a perna de
+       ENTRADA na conta de aplicacao nao esta sendo gravada quando o dinheiro
+       sai da conta corrente.
+   ============================================================================ */
