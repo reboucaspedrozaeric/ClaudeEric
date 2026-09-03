@@ -1,0 +1,37 @@
+-- Exemplo de SQL no Sankhya (Oracle)
+-- Consulta pedidos de venda do mês atual, trazendo parceiro, vendedor e valor total
+
+SELECT
+    CAB.NUNOTA,
+    CAB.DTNEG,
+    PAR.NOMEPARC,
+    VEND.APELIDO   AS VENDEDOR,
+    CAB.VLRNOTA,
+    CAB.STATUSNOTA
+FROM
+    TGFCAB CAB
+    INNER JOIN TGFPAR PAR ON PAR.CODPARC = CAB.CODPARC
+    LEFT JOIN TGFVEN VEND ON VEND.CODVEND = CAB.CODVEND
+WHERE
+    CAB.TIPMOV = 'P'
+    AND CAB.DTNEG >= TRUNC(SYSDATE, 'MM')
+    AND CAB.DTNEG < ADD_MONTHS(TRUNC(SYSDATE, 'MM'), 1)
+ORDER BY
+    CAB.DTNEG DESC
+
+
+-- Exemplo 2: itens do pedido, com produto e quantidade
+SELECT
+    ITE.NUNOTA,
+    ITE.SEQUENCIA,
+    PRO.DESCRPROD,
+    ITE.QTDNEG,
+    ITE.VLRUNIT,
+    ITE.VLRTOT
+FROM
+    TGFITE ITE
+    INNER JOIN TGFPRO PRO ON PRO.CODPROD = ITE.CODPROD
+WHERE
+    ITE.NUNOTA = :nunota
+ORDER BY
+    ITE.SEQUENCIA
