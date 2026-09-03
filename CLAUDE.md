@@ -82,6 +82,10 @@ Para máximo proveito:
 - Revise o README antes de propor alterações
 - Mantenha o tom educativo e amigável
 
+## 🎨 Preferências de Estilo
+
+- SQL: nunca terminar comandos com ponto e vírgula (`;`).
+
 ## 🔗 Links Úteis
 
 - [Claude Code Web](https://claude.ai/code)
