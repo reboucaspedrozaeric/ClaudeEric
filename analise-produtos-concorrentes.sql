@@ -8,7 +8,7 @@
      Descricao | Qtd Marcas | Marcas | Qtd SKUs | Faturamento (R$) | Valor em Estoque (R$)
 
    Ajuste antes de rodar:
-     - Periodo de faturamento (:DT_INICIAL / :DT_FINAL abaixo)
+     - Periodo de faturamento (TO_DATE(...) na CTE vendas abaixo)
      - Filtro de empresa (CODEMP) nas CTEs de venda e estoque, se aplicavel
      - Campo de custo usado na valorizacao do estoque (hoje: PRO.CUSTOPROD)
      - HAVING COUNT(*) > 1 na CTE marcas_agg: mantem so referencias com
@@ -65,7 +65,8 @@ vendas AS (
     WHERE TOP.TIPMOV = 'V'
       AND CAB.STATUSNOTA = 'L'
       AND PRO.REFERENCIA IS NOT NULL
-      AND CAB.DTNEG BETWEEN :DT_INICIAL AND :DT_FINAL
+      AND CAB.DTNEG BETWEEN TO_DATE('01/01/2026', 'DD/MM/YYYY')
+                        AND TO_DATE('31/12/2026', 'DD/MM/YYYY')
     GROUP BY PRO.REFERENCIA
 ),
 estoque AS (
