@@ -10,7 +10,9 @@
    Ajuste antes de rodar:
      - Periodo de faturamento (TO_DATE(...) na CTE vendas abaixo)
      - Filtro de empresa (CODEMP) nas CTEs de venda e estoque, se aplicavel
-     - Campo de custo usado na valorizacao do estoque (hoje: PRO.CUSTOPROD)
+     - Campo de custo usado na valorizacao do estoque (hoje: TGFEST.CUSTOMED,
+       o custo medio por CODEMP/CODLOCAL; troque para CUSTOULTENT ou
+       CUSTOREP se preferir outro criterio)
      - HAVING COUNT(*) > 1 na CTE marcas_agg: mantem so referencias com
        mais de uma marca (ou seja, com concorrencia real)
    ===================================================================== */
@@ -70,9 +72,10 @@ vendas AS (
     GROUP BY PRO.REFERENCIA
 ),
 estoque AS (
+   /* custo fica em TGFEST (por CODEMP/CODLOCAL), nao em TGFPRO */
    SELECT
       PRO.REFERENCIA,
-      SUM(EST.ESTOQUE * PRO.CUSTOPROD) AS VALOR_ESTOQUE
+      SUM(EST.ESTOQUE * EST.CUSTOMED) AS VALOR_ESTOQUE
      FROM TGFEST EST
      JOIN TGFPRO PRO ON PRO.CODPROD = EST.CODPROD
     WHERE PRO.REFERENCIA IS NOT NULL
