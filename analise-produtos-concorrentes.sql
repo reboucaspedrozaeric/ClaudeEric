@@ -10,9 +10,10 @@
    Ajuste antes de rodar:
      - Periodo de faturamento (TO_DATE(...) na CTE vendas abaixo)
      - Filtro de empresa (CODEMP) nas CTEs de venda e estoque, se aplicavel
-     - Campo de custo usado na valorizacao do estoque (hoje: TGFEST.CUSTOMED,
-       o custo medio por CODEMP/CODLOCAL; troque para CUSTOULTENT ou
-       CUSTOREP se preferir outro criterio)
+     - Custo usado na valorizacao do estoque: TGFCUS.CUSSEMICM mais recente
+       por CODEMP/CODPROD (mesma logica da query de referencia informada),
+       multiplicado pela quantidade em TGFEST daquela empresa. Se quiser
+       restringir a empresas especificas, filtre EST.CODEMP na CTE estoque
      - HAVING COUNT(*) > 1 na CTE marcas_agg: mantem so referencias com
        mais de uma marca (ou seja, com concorrencia real)
    ===================================================================== */
@@ -71,13 +72,33 @@ vendas AS (
                         AND TO_DATE('31/12/2026', 'DD/MM/YYYY')
     GROUP BY PRO.REFERENCIA
 ),
+custo_atual AS (
+   /* custo mais recente (CusSemICM) por CODEMP/CODPROD, igual a base
+      original: TGFCUS guarda historico de custo por empresa e data */
+   SELECT
+      T.CODEMP,
+      T.CODPROD,
+      T.CUSSEMICM
+     FROM TGFCUS T
+    WHERE T.DTATUAL = (
+             SELECT MAX(T2.DTATUAL)
+               FROM TGFCUS T2
+              WHERE T2.CODEMP = T.CODEMP
+                AND T2.CODPROD = T.CODPROD
+          )
+),
 estoque AS (
-   /* custo fica em TGFEST (por CODEMP/CODLOCAL), nao em TGFPRO */
+   /* quantidade por empresa (TGFEST) x custo mais recente daquela
+      empresa (custo_atual); troque/filtre CODEMP conforme necessario
+      (ex.: AND EST.CODEMP IN (1, 2, 4, 7, 8, 9)) */
    SELECT
       PRO.REFERENCIA,
-      SUM(EST.ESTOQUE * EST.CUSTOMED) AS VALOR_ESTOQUE
+      SUM(EST.ESTOQUE * NVL(CUS.CUSSEMICM, 0)) AS VALOR_ESTOQUE
      FROM TGFEST EST
      JOIN TGFPRO PRO ON PRO.CODPROD = EST.CODPROD
+     LEFT JOIN custo_atual CUS
+       ON CUS.CODPROD = EST.CODPROD
+      AND CUS.CODEMP = EST.CODEMP
     WHERE PRO.REFERENCIA IS NOT NULL
     GROUP BY PRO.REFERENCIA
 )
