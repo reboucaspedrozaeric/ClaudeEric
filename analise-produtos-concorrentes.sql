@@ -42,23 +42,35 @@ marcas_agg AS (
     GROUP BY GRUPO
    HAVING COUNT(*) > 1
 ),
-produtos AS (
-   /* descricao representativa do grupo (a mais frequente) e contagem de SKUs */
+descricao_contada AS (
+   /* quantas vezes cada descricao aparece dentro do grupo */
    SELECT
-      GRUPO,
-      COUNT(DISTINCT CODPROD) AS QTD_SKUS,
-      MIN(DESCRPROD) KEEP (
-         DENSE_RANK FIRST ORDER BY QTD_DESCR DESC, DESCRPROD
-      ) AS DESCRICAO
+      GPP.GRUPO,
+      PRO.DESCRPROD,
+      COUNT(*) OVER (PARTITION BY GPP.GRUPO, PRO.DESCRPROD) AS QTD_DESCR
+     FROM grupo_por_produto GPP
+     JOIN TGFPRO PRO ON PRO.CODPROD = GPP.CODPROD
+),
+descricao_grupo AS (
+   /* descricao mais frequente de cada grupo (desempate alfabetico) */
+   SELECT GRUPO, DESCRPROD AS DESCRICAO
      FROM (
             SELECT
-               GPP.GRUPO,
-               PRO.CODPROD,
-               PRO.DESCRPROD,
-               COUNT(*) OVER (PARTITION BY GPP.GRUPO, PRO.DESCRPROD) AS QTD_DESCR
-              FROM grupo_por_produto GPP
-              JOIN TGFPRO PRO ON PRO.CODPROD = GPP.CODPROD
+               GRUPO,
+               DESCRPROD,
+               ROW_NUMBER() OVER (
+                  PARTITION BY GRUPO
+                  ORDER BY QTD_DESCR DESC, DESCRPROD
+               ) AS RN
+              FROM descricao_contada
           )
+    WHERE RN = 1
+),
+produtos AS (
+   SELECT
+      GRUPO,
+      COUNT(DISTINCT CODPROD) AS QTD_SKUS
+     FROM grupo_por_produto
     GROUP BY GRUPO
 ),
 vendas AS (
@@ -101,7 +113,7 @@ estoque AS (
     GROUP BY GPP.GRUPO
 )
 SELECT
-   PRD.DESCRICAO                AS "Descricao",
+   DSC.DESCRICAO                AS "Descricao",
    MAR.GRUPO                    AS "Referencia",
    MAR.QTD_MARCAS                AS "Qtd Marcas",
    MAR.MARCAS                    AS "Marcas",
@@ -110,6 +122,7 @@ SELECT
    NVL(EST.VALOR_ESTOQUE, 0)     AS "Valor em Estoque (R$)"
   FROM produtos PRD
   JOIN marcas_agg MAR ON MAR.GRUPO = PRD.GRUPO
+  JOIN descricao_grupo DSC ON DSC.GRUPO = PRD.GRUPO
   LEFT JOIN vendas VEN ON VEN.GRUPO = PRD.GRUPO
   LEFT JOIN estoque EST ON EST.GRUPO = PRD.GRUPO
  ORDER BY NVL(VEN.FATURAMENTO, 0) DESC
