@@ -1,29 +1,11 @@
-WITH numaux AS (
-   /* uma linha por numero de intercambio de cada produto, normalizado */
-   SELECT
-      PRO.CODPROD,
-      UPPER(
-         REGEXP_REPLACE(
-            TRIM(REGEXP_SUBSTR(PRO.AD_NUMAUX, '[^,]+', 1, LEVEL)),
-            '[^A-Za-z0-9]', ''
-         )
-      ) AS TOKEN
-     FROM TGFPRO PRO
-    WHERE PRO.AD_NUMAUX IS NOT NULL
-      AND PRO.ATIVO = 'S'
-   CONNECT BY LEVEL <= REGEXP_COUNT(PRO.AD_NUMAUX, ',') + 1
-          AND PRIOR PRO.CODPROD = PRO.CODPROD
-          AND PRIOR SYS_GUID() IS NOT NULL
-),
-grupo_por_produto AS (
-   /* grupo canonico do produto = menor numero normalizado da propria lista */
+WITH grupo_por_produto AS (
+   /* grupo = numero original (TGFPRO.AD_NUMORIGINAL), normalizado */
    SELECT
       CODPROD,
-      MIN(TOKEN) AS GRUPO
-     FROM numaux
-    WHERE TOKEN IS NOT NULL
-      AND LENGTH(TOKEN) > 0
-    GROUP BY CODPROD
+      UPPER(TRIM(AD_NUMORIGINAL)) AS GRUPO
+     FROM TGFPRO
+    WHERE AD_NUMORIGINAL IS NOT NULL
+      AND ATIVO = 'S'
 ),
 marcas_ref AS (
    SELECT DISTINCT
@@ -131,42 +113,43 @@ SELECT
    NOTAS (fora do comando para nao quebrar validadores que exigem que
    a query comece literalmente com SELECT ou WITH)
    =====================================================================
-   ANALISE DE PRODUTOS CONCORRENTES POR NUMERO DE REFERENCIA (AD_NUMAUX)
+   ANALISE DE PRODUTOS CONCORRENTES POR NUMERO ORIGINAL (AD_NUMORIGINAL)
 
    TGFPRO.REFERENCIA NAO serve para este cruzamento: e apenas o CODPROD
    com zero a esquerda, unico por produto e nunca compartilhado entre
    marcas (confirmado em dados reais: CODPROD 261466 -> REFERENCIA
-   '0261466'). O campo que realmente identifica produtos equivalentes
-   de marcas diferentes e TGFPRO.AD_NUMAUX: uma lista separada por
-   virgula com os numeros de intercambio (fabricante/OEM) daquele
-   produto. Exemplo real: CODPROD 261466 (SENSOR ELETRONICO PRESSAO,
-   marca 3RHO) tem AD_NUMAUX = '1839415C91,2U2919081,7733' - os mesmos
-   3 numeros que aparecem na aba "Numeros Auxiliares (RSYS)" do
-   cadastro do produto, um por marca (MWM, FORD, 3RHO).
+   '0261466').
 
-   Estrategia de agrupamento:
-     1) Explode AD_NUMAUX em uma linha por numero, normalizando
-        (maiusculas, sem pontuacao) para tolerar formatos diferentes
-        do mesmo numero (ex.: "773-3" vs "7733")
-     2) Cada produto recebe um GRUPO = o menor numero normalizado da
-        sua propria lista. Isso funciona porque a lista de cada
-        produto ja parece incluir reciprocamente os numeros das
-        marcas equivalentes (visto no exemplo acima) - ou seja, nao
-        precisa de fechamento transitivo/grafo para casar os grupos
-     3) So mantem GRUPO com mais de uma marca (concorrencia real)
+   A primeira tentativa usou TGFPRO.AD_NUMAUX (lista de numeros de
+   intercambio separada por virgula, explodida e agrupada pelo menor
+   numero normalizado), mas trouxe grupos demais/errados - a lista de
+   auxiliares aparentemente inclui numeros que nao sao exclusivos de
+   um unico grupo de equivalencia, entao o "menor numero da lista"
+   acabava juntando produtos que nao deveriam estar juntos.
+
+   Agora o agrupamento usa TGFPRO.AD_NUMORIGINAL diretamente: um valor
+   unico por produto (nao uma lista), normalizado (maiusculas, trim).
+   Exemplo real: CODPROD 261466 (SENSOR ELETRONICO PRESSAO, marca
+   3RHO) tem AD_NUMORIGINAL = '7733'. Produtos de marcas diferentes
+   com o mesmo AD_NUMORIGINAL caem no mesmo grupo.
+
+   So mantem grupos com mais de uma marca (concorrencia real) - ver
+   HAVING COUNT(*) > 1 na CTE marcas_agg.
 
    Isso responde tambem ao pedido de trazer a referencia (nao so a
-   descricao) na saida: a coluna "Referencia" mostra o GRUPO (numero
-   de intercambio canonico) usado para juntar as marcas.
+   descricao) na saida: a coluna "Referencia" mostra o AD_NUMORIGINAL
+   usado para juntar as marcas.
 
    Ainda NAO incorporado (falar se quiser incluir):
      - TGFPAP (aba "Produtos Equivalentes"): mapeia CODPROD para
        codigos equivalentes por parceiro/fornecedor - e uma fonte
-       diferente (equivalencia para fins de compra), pode complementar
-       o cruzamento por AD_NUMAUX mas nao foi somado aqui
+       diferente (equivalencia para fins de compra), nao foi somada
+       aqui
      - Campo CARACTERISTICAS (aba Geral): e texto livre de aplicacao
        veicular, nao um numero de referencia estruturado - nao usado
        para o agrupamento
+     - AD_NUMFABRICANTE / AD_NUMAUX: campos alternativos de referencia
+       que nao estao sendo usados nesta versao
 
    Ajuste antes de rodar:
      - Periodo de faturamento (TO_DATE(...) na CTE vendas)
