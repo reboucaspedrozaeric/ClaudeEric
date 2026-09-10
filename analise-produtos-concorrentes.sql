@@ -118,8 +118,8 @@ SELECT
    MAR.QTD_MARCAS                AS "Qtd_Marcas",
    MAR.MARCAS                    AS "Marcas",
    PRD.QTD_SKUS                  AS "Qtd_SKUs",
-   NVL(VEN.FATURAMENTO, 0)       AS "Faturamento (R$)",
-   NVL(EST.VALOR_ESTOQUE, 0)     AS "Valor_em_Estoque (R$)"
+   NVL(VEN.FATURAMENTO, 0)       AS "Faturamento_RS",
+   NVL(EST.VALOR_ESTOQUE, 0)     AS "Valor_em_Estoque_RS"
   FROM produtos PRD
   JOIN marcas_agg MAR ON MAR.GRUPO = PRD.GRUPO
   JOIN descricao_grupo DSC ON DSC.GRUPO = PRD.GRUPO
