@@ -53,7 +53,7 @@ descricao_contada AS (
 ),
 descricao_grupo AS (
    /* descricao mais frequente de cada grupo (desempate alfabetico) */
-   SELECT GRUPO, DESCRPROD AS DESCRICAO
+   SELECT X.GRUPO, X.DESCRPROD AS DESCRICAO
      FROM (
             SELECT
                GRUPO,
@@ -63,8 +63,8 @@ descricao_grupo AS (
                   ORDER BY QTD_DESCR DESC, DESCRPROD
                ) AS RN
               FROM descricao_contada
-          )
-    WHERE RN = 1
+          ) X
+    WHERE X.RN = 1
 ),
 produtos AS (
    SELECT
