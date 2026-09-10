@@ -1,47 +1,3 @@
-/* =====================================================================
-   ANALISE DE PRODUTOS CONCORRENTES POR NUMERO DE REFERENCIA (AD_NUMAUX)
-   =====================================================================
-   TGFPRO.REFERENCIA NAO serve para este cruzamento: e apenas o CODPROD
-   com zero a esquerda, unico por produto e nunca compartilhado entre
-   marcas (confirmado em dados reais: CODPROD 261466 -> REFERENCIA
-   '0261466'). O campo que realmente identifica produtos equivalentes
-   de marcas diferentes e TGFPRO.AD_NUMAUX: uma lista separada por
-   virgula com os numeros de intercambio (fabricante/OEM) daquele
-   produto. Exemplo real: CODPROD 261466 (SENSOR ELETRONICO PRESSAO,
-   marca 3RHO) tem AD_NUMAUX = '1839415C91,2U2919081,7733' - os mesmos
-   3 numeros que aparecem na aba "Numeros Auxiliares (RSYS)" do
-   cadastro do produto, um por marca (MWM, FORD, 3RHO).
-
-   Estrategia de agrupamento:
-     1) Explode AD_NUMAUX em uma linha por numero, normalizando
-        (maiusculas, sem pontuacao) para tolerar formatos diferentes
-        do mesmo numero (ex.: "773-3" vs "7733")
-     2) Cada produto recebe um GRUPO = o menor numero normalizado da
-        sua propria lista. Isso funciona porque a lista de cada
-        produto ja parece incluir reciprocamente os numeros das
-        marcas equivalentes (visto no exemplo acima) - ou seja, nao
-        precisa de fechamento transitivo/grafo para casar os grupos
-     3) So mantem GRUPO com mais de uma marca (concorrencia real)
-
-   Isso responde tambem ao pedido de trazer a referencia (nao so a
-   descricao) na saida: a coluna "Referencia" abaixo mostra o GRUPO
-   (numero de intercambio canonico) usado para juntar as marcas.
-
-   Ainda NAO incorporado (falar se quiser incluir):
-     - TGFPAP (aba "Produtos Equivalentes"): mapeia CODPROD para
-       codigos equivalentes por parceiro/fornecedor - e uma fonte
-       diferente (equivalencia para fins de compra), pode complementar
-       o cruzamento por AD_NUMAUX mas nao foi somado aqui
-     - Campo CARACTERISTICAS (aba Geral): e texto livre de aplicacao
-       veicular, nao um numero de referencia estruturado - nao usado
-       para o agrupamento
-
-   Ajuste antes de rodar:
-     - Periodo de faturamento (TO_DATE(...) na CTE vendas)
-     - Filtro de empresa (CODEMP), se aplicavel, nas CTEs vendas/estoque
-     - Custo: TGFCUS.CUSSEMICM mais recente por CODEMP/CODPROD
-   ===================================================================== */
-
 WITH numaux AS (
    /* uma linha por numero de intercambio de cada produto, normalizado */
    SELECT
@@ -157,3 +113,50 @@ SELECT
   LEFT JOIN vendas VEN ON VEN.GRUPO = PRD.GRUPO
   LEFT JOIN estoque EST ON EST.GRUPO = PRD.GRUPO
  ORDER BY NVL(VEN.FATURAMENTO, 0) DESC
+
+/* =====================================================================
+   NOTAS (fora do comando para nao quebrar validadores que exigem que
+   a query comece literalmente com SELECT ou WITH)
+   =====================================================================
+   ANALISE DE PRODUTOS CONCORRENTES POR NUMERO DE REFERENCIA (AD_NUMAUX)
+
+   TGFPRO.REFERENCIA NAO serve para este cruzamento: e apenas o CODPROD
+   com zero a esquerda, unico por produto e nunca compartilhado entre
+   marcas (confirmado em dados reais: CODPROD 261466 -> REFERENCIA
+   '0261466'). O campo que realmente identifica produtos equivalentes
+   de marcas diferentes e TGFPRO.AD_NUMAUX: uma lista separada por
+   virgula com os numeros de intercambio (fabricante/OEM) daquele
+   produto. Exemplo real: CODPROD 261466 (SENSOR ELETRONICO PRESSAO,
+   marca 3RHO) tem AD_NUMAUX = '1839415C91,2U2919081,7733' - os mesmos
+   3 numeros que aparecem na aba "Numeros Auxiliares (RSYS)" do
+   cadastro do produto, um por marca (MWM, FORD, 3RHO).
+
+   Estrategia de agrupamento:
+     1) Explode AD_NUMAUX em uma linha por numero, normalizando
+        (maiusculas, sem pontuacao) para tolerar formatos diferentes
+        do mesmo numero (ex.: "773-3" vs "7733")
+     2) Cada produto recebe um GRUPO = o menor numero normalizado da
+        sua propria lista. Isso funciona porque a lista de cada
+        produto ja parece incluir reciprocamente os numeros das
+        marcas equivalentes (visto no exemplo acima) - ou seja, nao
+        precisa de fechamento transitivo/grafo para casar os grupos
+     3) So mantem GRUPO com mais de uma marca (concorrencia real)
+
+   Isso responde tambem ao pedido de trazer a referencia (nao so a
+   descricao) na saida: a coluna "Referencia" mostra o GRUPO (numero
+   de intercambio canonico) usado para juntar as marcas.
+
+   Ainda NAO incorporado (falar se quiser incluir):
+     - TGFPAP (aba "Produtos Equivalentes"): mapeia CODPROD para
+       codigos equivalentes por parceiro/fornecedor - e uma fonte
+       diferente (equivalencia para fins de compra), pode complementar
+       o cruzamento por AD_NUMAUX mas nao foi somado aqui
+     - Campo CARACTERISTICAS (aba Geral): e texto livre de aplicacao
+       veicular, nao um numero de referencia estruturado - nao usado
+       para o agrupamento
+
+   Ajuste antes de rodar:
+     - Periodo de faturamento (TO_DATE(...) na CTE vendas)
+     - Filtro de empresa (CODEMP), se aplicavel, nas CTEs vendas/estoque
+     - Custo: TGFCUS.CUSSEMICM mais recente por CODEMP/CODPROD
+   ===================================================================== */
